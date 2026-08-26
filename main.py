@@ -22,7 +22,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     logger.warning("GEMINI_API_KEY non impostata: le richieste a /genera falliranno.")
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-3.7-flash')
+model = genai.GenerativeModel('gemini-3.6-flash')
 
 class RicettaRequest(BaseModel):
     lista: list[str] = Field(..., min_length=1, max_length=30)
