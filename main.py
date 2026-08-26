@@ -22,7 +22,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     logger.warning("GEMINI_API_KEY non impostata: le richieste a /genera falliranno.")
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-3.6-flash')
+model = genai.GenerativeModel('gemini-3.7-flash')
 
 class RicettaRequest(BaseModel):
     lista: list[str] = Field(..., min_length=1, max_length=30)
@@ -61,7 +61,7 @@ async def genera(request: RicettaRequest):
     - tempo: min
     - calorie: kcal
     - fonte: Nome sito reale (es: GialloZafferano, Cookist, Cucchiaio d'Argento)
-    - immagine_keyword: UNA parola inglese specifica di cibo (es: 'pasta', 'chicken', 'pizza')
+    - immagine_keyword: 2-3 parole inglesi che descrivono ESATTAMENTE il piatto (ingrediente principale + tipo di piatto + eventuale metodo di cottura), separate da uno spazio, senza articoli. Deve essere specifica al piatto, non generica (es: 'creamy mushroom risotto', 'grilled chicken breast', 'margherita pizza slice', 'baked salmon fillet' — NON semplicemente 'pasta', 'chicken' o 'pizza' da sole)
     - ingredienti_con_dosi: lista con quantità (es: '200g di riso')
     - passaggi: lista step brevi (max 5)
     - segreto_chef: consiglio rapido
