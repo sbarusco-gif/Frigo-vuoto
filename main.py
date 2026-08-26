@@ -1,86 +1,239 @@
-import os
-import json
 import logging
+import os
+from typing import List
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chefmind")
 
-app = FastAPI()
+app = FastAPI(title="ChefMind Pro API", version="2.0.0")
 
-# CORS: in produzione imposta ALLOWED_ORIGINS (es. "https://tuosito.it,https://www.tuosito.it")
-# Se non impostata, resta aperta ("*") per comodità in sviluppo.
-_origins_env = os.environ.get("ALLOWED_ORIGINS", "*")
-allow_origins = ["*"] if _origins_env.strip() == "*" else [o.strip() for o in _origins_env.split(",") if o.strip()]
-app.add_middleware(CORSMiddleware, allow_origins=allow_origins, allow_methods=["*"], allow_headers=["*"])
+# -----------------------------
+# CORS
+# -----------------------------
+_origins_env = os.getenv("ALLOWED_ORIGINS", "*").strip()
 
-# Configurazione Gemini (Usa la chiave GEMINI_API_KEY su Render)
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    logger.warning("GEMINI_API_KEY non impostata: le richieste a /genera falliranno.")
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-3.7-flash')
+if _origins_env == "*":
+    allow_origins = ["*"]
+else:
+    allow_origins = [
+        origin.strip().rstrip("/")
+        for origin in _origins_env.split(",")
+        if origin.strip()
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allow_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+
+# -----------------------------
+# Gemini
+# -----------------------------
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
+
+client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+
+# -----------------------------
+# Schemi Pydantic
+# -----------------------------
+class Ricetta(BaseModel):
+    titolo: str
+    tempo: str
+    calorie: int = Field(ge=0)
+    fonte: str
+    immagine_keyword: str
+    ingredienti_con_dosi: List[str]
+    passaggi: List[str]
+    segreto_chef: str
+    vino: str
+    impiattamento: str
+    ingredienti_mancanti: List[str]
+    domanda_utente: str
+
+
+class RispostaRicette(BaseModel):
+    ricette: List[Ricetta] = Field(min_length=1, max_length=3)
+
 
 class RicettaRequest(BaseModel):
-    lista: list[str] = Field(..., min_length=1, max_length=30)
-    mode: str
-    strict: bool
+    lista: List[str] = Field(..., min_length=1, max_length=30)
+    mode: str = Field(default="ai")
+    strict: bool = False
 
-def estrai_json(testo: str) -> dict:
-    """Estrae il JSON dalla risposta del modello, tollerando blocchi markdown ```json ... ```"""
-    t = testo.strip()
-    if t.startswith("```"):
-        t = t.split("```")[1]
-        t = t[4:] if t.lower().startswith("json") else t
-    start, end = t.find("{"), t.rfind("}")
-    if start == -1 or end == -1:
-        raise ValueError("Nessun oggetto JSON trovato nella risposta del modello")
-    return json.loads(t[start:end + 1])
 
+# -----------------------------
+# Prompt
+# -----------------------------
+def crea_prompt(request: RicettaRequest) -> str:
+    prodotti = ", ".join(
+        str(item).strip().lower()
+        for item in request.lista
+        if str(item).strip()
+    )
+
+    if not prodotti:
+        raise ValueError("La lista degli ingredienti è vuota.")
+
+    if request.mode == "web":
+        modalita = """
+MODALITÀ WEB:
+usa la ricerca web disponibile per verificare ricette e fonti reali.
+La voce "fonte" deve indicare una fonte effettivamente consultata.
+Non inventare siti, ricette o riferimenti.
+"""
+    else:
+        modalita = """
+MODALITÀ AI:
+genera ricette originali sulla base degli ingredienti indicati.
+Non dichiarare come consultata una fonte web che non è stata realmente verificata.
+Se non stai usando una fonte esterna, usa "ChefMind Pro" come fonte.
+"""
+
+    if request.strict:
+        regola = """
+MODALITÀ RIGOROSA:
+usa esclusivamente gli ingredienti presenti nella dispensa.
+Sono consentiti soltanto acqua, sale e normali tecniche di cottura.
+Non proporre ingredienti mancanti.
+ingredienti_mancanti deve essere una lista vuota.
+"""
+    else:
+        regola = """
+MODALITÀ LIBERA:
+puoi aggiungere ingredienti complementari realmente necessari.
+Indica gli ingredienti aggiuntivi in ingredienti_mancanti.
+"""
+
+    return f"""
+Sei ChefMind Pro, un assistente culinario italiano.
+
+Ingredienti disponibili:
+{prodotti}
+
+{modalita}
+{regola}
+
+Genera esattamente 3 ricette diverse.
+
+Per ogni ricetta:
+- titolo: nome chiaro della ricetta
+- tempo: tempo totale, ad esempio "30 minuti"
+- calorie: stima numerica delle kcal per porzione
+- fonte: fonte reale solo se effettivamente consultata; altrimenti "ChefMind Pro"
+- immagine_keyword: una sola keyword inglese specifica per il cibo
+- ingredienti_con_dosi: lista con quantità e unità
+- passaggi: massimo 5 passaggi brevi e ordinati
+- segreto_chef: consiglio pratico
+- vino: abbinamento
+- impiattamento: indicazione estetica
+- ingredienti_mancanti: lista degli ingredienti aggiuntivi necessari; vuota in modalità rigorosa
+- domanda_utente: domanda cordiale finale
+
+Non inventare dati di ricerca.
+Non inserire markdown.
+Restituisci esclusivamente la struttura JSON richiesta dallo schema.
+"""
+
+
+# -----------------------------
+# Health check
+# -----------------------------
 @app.get("/")
 def home():
-    return "ok"
+    return {
+        "status": "ChefMind Pro Online",
+        "model": GEMINI_MODEL,
+        "gemini_configured": bool(GEMINI_API_KEY),
+    }
 
-@app.post("/genera")
+
+# -----------------------------
+# Generazione ricette
+# -----------------------------
+@app.post("/genera", response_model=RispostaRicette)
 async def genera(request: RicettaRequest):
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY non configurata sul server")
-    prodotti = ", ".join(request.lista)
-    # FORZIAMO 3 RICETTE
-    prompt = f"""
-    Sei ChefMind Pro. Rispondi in Italiano. 
-    REGOLE: {"USA SOLO gli ingredienti forniti" if request.strict else "Puoi suggerire extra"}.
-    Crea 3 ricette diverse con: {prodotti}. 
-    Rispondi SOLO in JSON puro.
-    
-    Struttura obbligatoria per ogni ricetta:
-    - titolo: Nome
-    - tempo: min
-    - calorie: kcal
-    - fonte: Nome sito reale (es: GialloZafferano, Cookist, Cucchiaio d'Argento)
-    - immagine_keyword: 2-3 parole inglesi che descrivono ESATTAMENTE il piatto (ingrediente principale + tipo di piatto + eventuale metodo di cottura), separate da uno spazio, senza articoli. Deve essere specifica al piatto, non generica (es: 'creamy mushroom risotto', 'grilled chicken breast', 'margherita pizza slice', 'baked salmon fillet' — NON semplicemente 'pasta', 'chicken' o 'pizza' da sole)
-    - ingredienti_con_dosi: lista con quantità (es: '200g di riso')
-    - passaggi: lista step brevi (max 5)
-    - segreto_chef: consiglio rapido
-    - vino: abbinamento
-    - impiattamento: estetica
-    - ingredienti_mancanti: lista nomi e dosi
-    - domanda_utente: domanda cordiale
-    
-    Struttura finale: {{ "ricette": [ {{...}}, {{...}}, {{...}} ] }}
-    """
+    if client is None:
+        raise HTTPException(
+            status_code=500,
+            detail="GEMINI_API_KEY non configurata sul server."
+        )
+
+    if request.mode not in {"ai", "web"}:
+        raise HTTPException(
+            status_code=400,
+            detail="mode deve essere 'ai' oppure 'web'."
+        )
 
     try:
-        response = model.generate_content(prompt)
-        return estrai_json(response.text)
-    except Exception as e:
-        logger.exception("Errore nella generazione o nel parsing della risposta Gemini")
-        return {"error": str(e), "ricette": []}
+        prompt = crea_prompt(request)
 
+        tools = None
+
+        if request.mode == "web":
+            tools = [
+                types.Tool(
+                    google_search=types.GoogleSearch()
+                )
+            ]
+
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=RispostaRicette,
+            temperature=0.7,
+            tools=tools,
+        )
+
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=config,
+        )
+
+        if not response.text:
+            raise RuntimeError("Gemini ha restituito una risposta vuota.")
+
+        # Con output strutturato, il JSON è già vincolato allo schema.
+        risultato = RispostaRicette.model_validate_json(response.text)
+
+        if len(risultato.ricette) != 3:
+            raise RuntimeError(
+                f"Gemini ha restituito {len(risultato.ricette)} ricette invece di 3."
+            )
+
+        # Sicurezza applicativa: in modalità rigorosa non devono comparire
+        # ingredienti mancanti.
+        if request.strict:
+            for ricetta in risultato.ricette:
+                ricetta.ingredienti_mancanti = []
+
+        return risultato
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Errore nella generazione delle ricette")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Errore nella generazione Gemini: {str(exc)}"
+        ) from exc
+
+
+# -----------------------------
+# Avvio locale / Render
+# -----------------------------
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 10000))
+
+    port = int(os.getenv("PORT", "10000"))
     uvicorn.run(app, host="0.0.0.0", port=port)
