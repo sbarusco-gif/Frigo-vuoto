@@ -2,7 +2,7 @@ import React, { useState } from "react";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
-  "https://chefmind-pro-api.onrender.com";
+  "https://frigo-vuoto-1.onrender.com";
 
 export default function App() {
   const [ingredienti, setIngredienti] = useState("");
@@ -30,18 +30,11 @@ export default function App() {
     try {
       const response = await fetch(`${API_URL}/genera`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          lista,
-          mode,
-          strict,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lista, mode, strict }),
       });
 
-      let data = null;
-
+      let data;
       try {
         data = await response.json();
       } catch {
@@ -50,8 +43,7 @@ export default function App() {
 
       if (!response.ok) {
         throw new Error(
-          data?.detail ||
-            `Errore del server (${response.status}).`
+          data?.detail || `Errore del server (${response.status}).`
         );
       }
 
@@ -63,8 +55,7 @@ export default function App() {
     } catch (error) {
       console.error("Errore ChefMind Pro:", error);
       setErrore(
-        error?.message ||
-          "Impossibile collegarsi al server ChefMind Pro."
+        error?.message || "Impossibile collegarsi al server ChefMind Pro."
       );
     } finally {
       setLoading(false);
@@ -82,9 +73,7 @@ export default function App() {
         </header>
 
         <section style={styles.card}>
-          <label style={styles.label}>
-            Ingredienti disponibili
-          </label>
+          <label style={styles.label}>Ingredienti disponibili</label>
 
           <textarea
             value={ingredienti}
@@ -103,9 +92,7 @@ export default function App() {
                 style={styles.select}
               >
                 <option value="ai">AI</option>
-                <option value="web">
-                  Web
-                </option>
+                <option value="web">Web</option>
               </select>
             </label>
 
@@ -126,23 +113,18 @@ export default function App() {
             style={{
               ...styles.button,
               opacity: loading ? 0.65 : 1,
+              cursor: loading ? "wait" : "pointer",
             }}
           >
             {loading ? "Sto creando le ricette..." : "Genera ricette"}
           </button>
 
-          {errore && (
-            <div style={styles.error}>
-              {errore}
-            </div>
-          )}
+          {errore && <div style={styles.error}>{errore}</div>}
         </section>
 
         {ricette.length > 0 && (
           <section style={styles.results}>
-            <h2 style={styles.resultsTitle}>
-              Le tue ricette
-            </h2>
+            <h2 style={styles.resultsTitle}>Le tue ricette</h2>
 
             <div style={styles.grid}>
               {ricette.map((ricetta, index) => (
@@ -153,7 +135,7 @@ export default function App() {
                   {ricetta.immagine_url ? (
                     <img
                       src={ricetta.immagine_url}
-                      alt={ricetta.titolo}
+                      alt={`Foto di ${ricetta.titolo}`}
                       style={styles.image}
                       loading="lazy"
                       onError={(event) => {
@@ -167,9 +149,7 @@ export default function App() {
                   )}
 
                   <div style={styles.recipeBody}>
-                    <h3 style={styles.recipeTitle}>
-                      {ricetta.titolo}
-                    </h3>
+                    <h3 style={styles.recipeTitle}>{ricetta.titolo}</h3>
 
                     <div style={styles.meta}>
                       <span>⏱ {ricetta.tempo}</span>
@@ -240,9 +220,7 @@ export default function App() {
                     )}
 
                     {ricetta.domanda_utente && (
-                      <p style={styles.question}>
-                        {ricetta.domanda_utente}
-                      </p>
+                      <p style={styles.question}>{ricetta.domanda_utente}</p>
                     )}
                   </div>
                 </article>
@@ -264,29 +242,10 @@ const styles = {
       "Inter, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
     color: "#222",
   },
-
-  container: {
-    maxWidth: "1200px",
-    margin: "0 auto",
-  },
-
-  header: {
-    textAlign: "center",
-    marginBottom: "28px",
-  },
-
-  title: {
-    margin: 0,
-    fontSize: "42px",
-    fontWeight: 800,
-  },
-
-  subtitle: {
-    marginTop: "8px",
-    color: "#666",
-    fontSize: "18px",
-  },
-
+  container: { maxWidth: "1200px", margin: "0 auto" },
+  header: { textAlign: "center", marginBottom: "28px" },
+  title: { margin: 0, fontSize: "42px", fontWeight: 800 },
+  subtitle: { marginTop: "8px", color: "#666", fontSize: "18px" },
   card: {
     background: "#fff",
     borderRadius: "18px",
@@ -294,13 +253,7 @@ const styles = {
     boxShadow: "0 5px 25px rgba(0,0,0,.08)",
     marginBottom: "32px",
   },
-
-  label: {
-    display: "block",
-    fontWeight: 700,
-    marginBottom: "8px",
-  },
-
+  label: { display: "block", fontWeight: 700, marginBottom: "8px" },
   textarea: {
     width: "100%",
     boxSizing: "border-box",
@@ -311,7 +264,6 @@ const styles = {
     fontSize: "16px",
     outline: "none",
   },
-
   controls: {
     display: "flex",
     gap: "24px",
@@ -319,7 +271,6 @@ const styles = {
     flexWrap: "wrap",
     marginTop: "18px",
   },
-
   select: {
     display: "block",
     marginTop: "8px",
@@ -328,14 +279,12 @@ const styles = {
     border: "1px solid #ddd",
     background: "#fff",
   },
-
   checkboxLabel: {
     display: "flex",
     gap: "8px",
     alignItems: "center",
     fontWeight: 600,
   },
-
   button: {
     width: "100%",
     marginTop: "22px",
@@ -346,9 +295,7 @@ const styles = {
     color: "#fff",
     fontSize: "17px",
     fontWeight: 700,
-    cursor: "pointer",
   },
-
   error: {
     marginTop: "18px",
     padding: "12px 14px",
@@ -356,30 +303,19 @@ const styles = {
     background: "#fff0f0",
     color: "#a00000",
   },
-
-  results: {
-    marginTop: "20px",
-  },
-
-  resultsTitle: {
-    textAlign: "center",
-    marginBottom: "22px",
-  },
-
+  results: { marginTop: "20px" },
+  resultsTitle: { textAlign: "center", marginBottom: "22px" },
   grid: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(auto-fit, minmax(300px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
     gap: "24px",
   },
-
   recipeCard: {
     background: "#fff",
     borderRadius: "18px",
     overflow: "hidden",
     boxShadow: "0 5px 25px rgba(0,0,0,.08)",
   },
-
   image: {
     display: "block",
     width: "100%",
@@ -387,7 +323,6 @@ const styles = {
     objectFit: "cover",
     background: "#eee",
   },
-
   noImage: {
     height: "120px",
     display: "flex",
@@ -398,17 +333,8 @@ const styles = {
     color: "#666",
     textAlign: "center",
   },
-
-  recipeBody: {
-    padding: "20px",
-  },
-
-  recipeTitle: {
-    marginTop: 0,
-    marginBottom: "10px",
-    fontSize: "24px",
-  },
-
+  recipeBody: { padding: "20px" },
+  recipeTitle: { marginTop: 0, marginBottom: "10px", fontSize: "24px" },
   meta: {
     display: "flex",
     gap: "16px",
@@ -416,16 +342,11 @@ const styles = {
     color: "#666",
     marginBottom: "16px",
   },
-
   source: {
     display: "inline-block",
     marginTop: "10px",
     color: "#444",
     fontSize: "14px",
   },
-
-  question: {
-    marginTop: "18px",
-    fontWeight: 600,
-  },
+  question: { marginTop: "18px", fontWeight: 600 },
 };
