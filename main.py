@@ -1,7 +1,7 @@
+import json
 import logging
 import os
 import re
-import json
 from typing import List
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -14,23 +14,27 @@ from pydantic import BaseModel, Field
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chefmind")
 
-app = FastAPI(title="ChefMind Pro API", version="4.0.0")
+app = FastAPI(title="ChefMind Pro API", version="4.1.0")
 
 # =========================================================
 # CORS
 # =========================================================
 origins_env = os.getenv("ALLOWED_ORIGINS", "*").strip()
-allow_origins = ["*"] if origins_env == "*" else [
-    origin.strip().rstrip("/")
-    for origin in origins_env.split(",")
-    if origin.strip()
-]
+
+if origins_env == "*":
+    allow_origins = ["*"]
+else:
+    allow_origins = [
+        origin.strip().rstrip("/")
+        for origin in origins_env.split(",")
+        if origin.strip()
+    ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "HEAD", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
 
@@ -46,7 +50,7 @@ client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 # OPENVERSE
 # =========================================================
 OPENVERSE_API = "https://api.openverse.org/v1/images/"
-OPENVERSE_USER_AGENT = "ChefMindPro/4.0"
+OPENVERSE_USER_AGENT = "ChefMindPro/4.1"
 
 # =========================================================
 # MODELLI
@@ -64,7 +68,6 @@ class Ricetta(BaseModel):
     impiattamento: str
     ingredienti_mancanti: List[str]
     domanda_utente: str
-
     immagine_url: str = ""
     immagine_page_url: str = ""
     immagine_autore: str = ""
@@ -103,20 +106,20 @@ RECIPE_SCHEMA = {
                     "immagine_keyword": {"type": "string"},
                     "ingredienti_con_dosi": {
                         "type": "array",
-                        "items": {"type": "string"}
+                        "items": {"type": "string"},
                     },
                     "passaggi": {
                         "type": "array",
-                        "items": {"type": "string"}
+                        "items": {"type": "string"},
                     },
                     "segreto_chef": {"type": "string"},
                     "vino": {"type": "string"},
                     "impiattamento": {"type": "string"},
                     "ingredienti_mancanti": {
                         "type": "array",
-                        "items": {"type": "string"}
+                        "items": {"type": "string"},
                     },
-                    "domanda_utente": {"type": "string"}
+                    "domanda_utente": {"type": "string"},
                 },
                 "required": [
                     "titolo",
@@ -130,17 +133,17 @@ RECIPE_SCHEMA = {
                     "vino",
                     "impiattamento",
                     "ingredienti_mancanti",
-                    "domanda_utente"
-                ]
-            }
+                    "domanda_utente",
+                ],
+            },
         }
     },
-    "required": ["ricette"]
+    "required": ["ricette"],
 }
 
 
 # =========================================================
-# FILTRO IMMAGINI
+# FILTRO FOTO
 # =========================================================
 SYNONYMS = {
     "pollo": {"pollo", "chicken"},
@@ -150,6 +153,7 @@ SYNONYMS = {
     "rice": {"riso", "rice"},
     "pasta": {"pasta"},
     "spaghetti": {"spaghetti", "pasta"},
+    "penne": {"penne", "pasta"},
     "manzo": {"manzo", "beef"},
     "beef": {"manzo", "beef"},
     "maiale": {"maiale", "pork"},
@@ -170,7 +174,7 @@ FORBIDDEN = {
     "person", "portrait", "dog", "cat", "bird", "horse",
     "logo", "map", "poster", "drawing", "illustration",
     "painting", "museum", "landscape", "dosa", "crepe",
-    "pancake", "chapati", "naan", "tortilla"
+    "pancake", "chapati", "naan", "tortilla",
 }
 
 
@@ -211,7 +215,7 @@ def find_image(recipe: Ricetta) -> dict:
 
     queries = list(dict.fromkeys([
         f"{clean(recipe.titolo)} food photography",
-        clean(recipe.immagine_keyword)
+        clean(recipe.immagine_keyword),
     ]))
 
     candidates = []
@@ -225,21 +229,19 @@ def find_image(recipe: Ricetta) -> dict:
                 "license_type": "commercial,modification",
                 "mature": "false",
                 "filter_dead": "true",
-                "size": "medium,large"
+                "size": "medium,large",
             })
 
             request = Request(
                 f"{OPENVERSE_API}?{params}",
                 headers={
                     "User-Agent": OPENVERSE_USER_AGENT,
-                    "Accept": "application/json"
-                }
+                    "Accept": "application/json",
+                },
             )
 
             with urlopen(request, timeout=10) as response:
-                data = json.loads(
-                    response.read().decode("utf-8")
-                )
+                data = json.loads(response.read().decode("utf-8"))
 
             for item in data.get("results", []):
                 title = clean(item.get("title", ""))
@@ -289,32 +291,21 @@ def find_image(recipe: Ricetta) -> dict:
     if not candidates:
         return {}
 
-    candidates.sort(
-        key=lambda item: item[0],
-        reverse=True
-    )
-
+    candidates.sort(key=lambda item: item[0], reverse=True)
     score, best = candidates[0]
 
-    # Soglia alta: meglio nessuna foto che una foto sbagliata.
+    # Meglio nessuna foto che una foto non pertinente.
     if score < 70:
         return {}
 
     return {
-        "immagine_url": (
-            best.get("thumbnail")
-            or best.get("url")
-            or ""
-        ),
-        "immagine_page_url": (
-            best.get("foreign_landing_url")
-            or ""
-        ),
+        "immagine_url": best.get("thumbnail") or best.get("url") or "",
+        "immagine_page_url": best.get("foreign_landing_url") or "",
         "immagine_autore": best.get("creator") or "",
         "immagine_licenza": (
             f"{best.get('license', '')} "
             f"{best.get('license_version', '')}"
-        ).strip()
+        ).strip(),
     }
 
 
@@ -335,8 +326,8 @@ def create_prompt(request: RicettaRequest) -> str:
         rule = """
 MODALITÀ RIGOROSA:
 usa esclusivamente gli ingredienti disponibili.
-Acqua, sale e normali tecniche di cottura sono ammessi.
-ingredienti_mancanti deve essere vuoto.
+Sono ammessi acqua, sale e normali tecniche di cottura.
+ingredienti_mancanti deve essere sempre vuoto.
 """
     else:
         rule = """
@@ -360,9 +351,8 @@ Per ogni ricetta:
 - tempo: tempo totale
 - calorie: numero intero di kcal per porzione
 - fonte: "ChefMind Pro"
-- immagine_keyword: descrizione inglese molto precisa per cercare
-  una fotografia reale del piatto; includi il nome del piatto,
-  gli ingredienti distintivi e "food photography"
+- immagine_keyword: descrizione inglese molto precisa per una fotografia reale
+  del piatto; includi piatto, ingredienti distintivi e "food photography"
 - ingredienti_con_dosi: quantità e unità
 - passaggi: massimo 5 passaggi ordinati
 - segreto_chef: consiglio pratico
@@ -379,32 +369,43 @@ Restituisci esclusivamente JSON conforme allo schema.
 
 
 # =========================================================
-# API
+# HEALTH CHECK RENDER
 # =========================================================
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def home():
     return {
         "status": "ChefMind Pro Online",
         "provider": "Groq",
         "model": GROQ_MODEL,
         "groq_configured": bool(GROQ_API_KEY),
-        "image_provider": "Openverse"
+        "image_provider": "Openverse",
     }
 
 
+@app.api_route("/health", methods=["GET", "HEAD"])
+def health():
+    return {
+        "status": "ok",
+        "provider": "Groq",
+        "groq_configured": bool(GROQ_API_KEY),
+    }
+
+
+# =========================================================
+# GENERAZIONE
+# =========================================================
 @app.post("/genera", response_model=RispostaRicette)
 async def genera(request: RicettaRequest):
-
     if client is None:
         raise HTTPException(
             status_code=500,
-            detail="GROQ_API_KEY non configurata sul server."
+            detail="GROQ_API_KEY non configurata sul server.",
         )
 
     if request.mode not in {"ai", "web"}:
         raise HTTPException(
             status_code=400,
-            detail="mode deve essere 'ai' oppure 'web'."
+            detail="mode deve essere 'ai' oppure 'web'.",
         )
 
     try:
@@ -417,12 +418,12 @@ async def genera(request: RicettaRequest):
                         "Sei ChefMind Pro. "
                         "Rispondi in italiano. "
                         "Rispetta rigorosamente lo schema JSON."
-                    )
+                    ),
                 },
                 {
                     "role": "user",
-                    "content": create_prompt(request)
-                }
+                    "content": create_prompt(request),
+                },
             ],
             temperature=0.4,
             response_format={
@@ -430,9 +431,9 @@ async def genera(request: RicettaRequest):
                 "json_schema": {
                     "name": "chefmind_recipes",
                     "strict": True,
-                    "schema": RECIPE_SCHEMA
-                }
-            }
+                    "schema": RECIPE_SCHEMA,
+                },
+            },
         )
 
         content = response.choices[0].message.content or ""
@@ -454,7 +455,6 @@ async def genera(request: RicettaRequest):
             for recipe in result.ricette:
                 recipe.ingredienti_mancanti = []
 
-        # La ricerca delle immagini è separata dalla generazione.
         for recipe in result.ricette:
             try:
                 image = find_image(recipe)
@@ -465,7 +465,7 @@ async def genera(request: RicettaRequest):
             except Exception:
                 logger.exception(
                     "Errore ricerca immagine: %s",
-                    recipe.titolo
+                    recipe.titolo,
                 )
 
         return result
@@ -484,17 +484,17 @@ async def genera(request: RicettaRequest):
                 detail=(
                     "Limite Groq temporaneamente raggiunto. "
                     "Riprova tra poco."
-                )
+                ),
             ) from exc
 
         raise HTTPException(
             status_code=502,
-            detail=f"Errore nella generazione IA: {message}"
+            detail=f"Errore nella generazione IA: {message}",
         ) from exc
 
 
 # =========================================================
-# AVVIO
+# AVVIO RENDER
 # =========================================================
 if __name__ == "__main__":
     import uvicorn
@@ -504,5 +504,5 @@ if __name__ == "__main__":
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=port
+        port=port,
     )
