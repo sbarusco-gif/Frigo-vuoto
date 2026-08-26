@@ -98,7 +98,7 @@ function App() {
           )}
           {current && (
             <div style={st.recipeCard}>
-              <img src={`https://loremflickr.com/800/600/cooked,food,${current.immagine_keyword}/all`} style={st.recipeImg} alt="food" />
+              <img src={`https://loremflickr.com/800/600/${current.immagine_keyword.trim().split(/\s+/).join(',')}`} style={st.recipeImg} alt={current.titolo} />
               <div style={{padding: '25px'}}>
                 <div style={st.badgeRow}>
                   <div style={st.fonteBadge}><Globe size={12}/> Fonte: {current.fonte}</div>
